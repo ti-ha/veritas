@@ -2,6 +2,8 @@
 
 An advanced AI text detection system using multi-modal algorithmic analysis.
 
+I built this to try and learn machine learning. I do not wish to compete with ZeroGPT or any similar business ventures.
+
 ---
 
 ## Quick Start
@@ -24,7 +26,7 @@ http://localhost:8000
 
 ## Overview
 
-VERITAS combines multiple algorithmic approaches to detect AI-generated text through feature analysis rather than simple pattern matching.
+Veritas combines multiple algorithmic approaches to detect AI-generated text through feature analysis rather than simple pattern matching.
 
 ### Quick Links
 
