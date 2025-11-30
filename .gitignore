@@ -41,7 +41,6 @@ docs/
 *.pdf
 nul
 QUICK_START.md
-README.md
 DOCUMENTATION.md
 
 # Data Files (large files and collected samples)
