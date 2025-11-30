@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VERITAS - Next-Generation AI Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .results {
+            display: none;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .classification-badge {
+            display: inline-block;
+            padding: 10px 25px;
+            border-radius: 25px;
+            font-weight: 700;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+
+        .badge-definitive { background: #4CAF50; color: white; }
+        .badge-probable { background: #FF9800; color: white; }
+        .badge-inconclusive { background: #9E9E9E; color: white; }
+
+        .probability-display {
+            font-size: 3em;
+            font-weight: 700;
+            color: #333;
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50 0%, #FF9800 50%, #F44336 100%);
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .explanation {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            line-height: 1.6;
+            border-left: 4px solid #667eea;
+        }
+
+        .module-scores {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 30px 0;
+        }
+
+        .module-card {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .module-name {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            font-size: 0.85em;
+        }
+
+        .module-score {
+            font-size: 2em;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #c62828;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            opacity: 0.9;
+        }
+
+        .tech-info {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>VERITAS</h1>
+            <div class="subtitle">AI detection tool</div>
+        </header>
+
+        <div class="main-card">
+            <div class="input-section">
+                <label for="textInput">Enter Text to Analyze</label>
+                <textarea
+                    id="textInput"
+                    placeholder="Paste the text you want to analyze here... (minimum 50 characters)"
+                ></textarea>
+                <div class="button-group">
+                    <button class="btn-primary" onclick="analyzeText()" id="analyzeBtn">
+                        Analyze Text
+                    </button>
+                    <button class="btn-secondary" onclick="clearAll()">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Analyzing text with VERITAS...</p>
+                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                    Running KCDA, TDA, Fractal, and Ergodic analysis...
+                </p>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+
+            <div id="results" class="results">
+                <div class="result-header">
+                    <div class="classification-badge" id="classificationBadge"></div>
+                    <div class="probability-display" id="probabilityDisplay"></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+
+                <div class="explanation" id="explanation"></div>
+
+                <h3 style="margin: 30px 0 15px 0;">Module Analysis</h3>
+                <div class="module-scores" id="moduleScores"></div>
+
+                <h3 style="margin: 30px 0 15px 0;">Analysis Statistics</h3>
+                <div class="stats" id="stats"></div>
+            </div>
+        </div>
+
+        <div class="tech-info">
+            <h3 style="margin-bottom: 15px;">Technical Foundation</h3>
+            <p style="line-height: 1.6;">
+                VERITAS uses four independent mathematical frameworks to detect AI-generated text:
+                <strong>Kolmogorov Complexity Analysis</strong> (48 features),
+                <strong>Topological Data Analysis</strong> (64 features),
+                <strong>Fractal Dimension Analysis</strong> (32 features), and
+                <strong>Ergodic Mixing Analysis</strong> (24 features).
+                Total: 168-dimensional feature space for robust multi-modal detection.
+            </p>
+        </div>
+
+        <footer>
+            <p>&copy; 2025 VERITAS | Advanced AI Detection Technology</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">
+                Based on algorithmic information theory, topological data analysis, fractal geometry, and ergodic theory
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        async function analyzeText() {
+            const text = document.getElementById('textInput').value.trim();
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const error = document.getElementById('error');
+
+            // Validation
+            if (!text) {
+                showError('Please enter some text to analyze.');
+                return;
+            }
+
+            if (text.length < 50) {
+                showError('Text is too short. Please enter at least 50 characters for reliable analysis.');
+                return;
+            }
+
+            // Reset UI
+            error.style.display = 'none';
+            results.classList.remove('show');
+            loading.style.display = 'block';
+            analyzeBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: text })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Analysis failed. Please try again.');
+                }
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                loading.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const results = document.getElementById('results');
+
+            // Classification badge
+            const badge = document.getElementById('classificationBadge');
+            const classificationText = ['DEFINITIVE', 'PROBABLE', 'INCONCLUSIVE'][data.classification_level - 1];
+            const badgeClass = ['badge-definitive', 'badge-probable', 'badge-inconclusive'][data.classification_level - 1];
+            badge.textContent = classificationText;
+            badge.className = 'classification-badge ' + badgeClass;
+
+            // Probability display
+            const probability = (data.ai_probability * 100).toFixed(1);
+            document.getElementById('probabilityDisplay').textContent = probability + '% AI Probability';
+
+            // Progress bar
+            const progressFill = document.getElementById('progressFill');
+            progressFill.style.width = probability + '%';
+            progressFill.textContent = 'Confidence: ' + (data.confidence * 100).toFixed(0) + '%';
+
+            // Explanation
+            document.getElementById('explanation').textContent = data.explanation;
+
+            // Module scores
+            const moduleScores = document.getElementById('moduleScores');
+            moduleScores.innerHTML = Object.entries(data.module_scores || {})
+                .map(([name, score]) => `
+                    <div class="module-card">
+                        <div class="module-name">${name.toUpperCase()}</div>
+                        <div class="module-score">${(score * 100).toFixed(0)}%</div>
+                    </div>
+                `).join('');
+
+            // Stats
+            const stats = document.getElementById('stats');
+            stats.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-label">Word Count</div>
+                    <div class="stat-value">${data.word_count || 0}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Processing Time</div>
+                    <div class="stat-value">${data.processing_time_ms.toFixed(0)}ms</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Features Analyzed</div>
+                    <div class="stat-value">${data.features.feature_vector_size || 168}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Agreement Score</div>
+                    <div class="stat-value">${((data.features.agreement_score || 0) * 100).toFixed(0)}%</div>
+                </div>
+            `;
+
+            // Show results
+            results.classList.add('show');
+        }
+
+        function showError(message) {
+            const error = document.getElementById('error');
+            error.textContent = message;
+            error.style.display = 'block';
+        }
+
+        function clearAll() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('results').classList.remove('show');
+            document.getElementById('error').style.display = 'none';
+        }
+
+        // Allow Enter key to submit (with Ctrl)
+        document.getElementById('textInput').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                analyzeText();
+            }
+        });
+    </script>
+</body>
+</html>
