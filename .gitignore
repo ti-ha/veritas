@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# internal documentation
+docs/
+*.pdf
+nul
+QUICK_START.md
+README.md
+DOCUMENTATION.md
+
+# Data Files (large files and collected samples)
+data/human_samples.json
+data/ai_samples.json
+data/train_samples.json
+data/val_samples.json
+data/test_samples.json
+*.json.bak
+
+#AI stuff
+.claude/
+
+# Model Files
+models/*.pkl
+models/*.joblib
+*.pkl
+*.joblib
+
+# Logs
+*.log
+human_collection.log
+ai_generation.log
+collection.log
+*.log.*
+
+# Sensitive Files
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.txt
+credentials.json
+config.ini
+*.secret
+
+# API Keys and Tokens
+HF_TOKEN
+OPENAI_API_KEY
+*.token
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter Notebooks (may contain exploration/experimentation)
+.ipynb_checkpoints
+*.ipynb
+
+
+# Temporary Files
+*.tmp
+*.temp
+tmp/
+temp/
