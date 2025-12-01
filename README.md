@@ -28,15 +28,6 @@ http://localhost:8000
 
 Veritas combines multiple algorithmic approaches to detect AI-generated text through feature analysis rather than simple pattern matching.
 
-### Quick Links
-
-| Need | Document |
-|------|----------|
-| Run the system | [Quick Start](#-quick-start) |
-| Run tests | [Testing](#-testing) |
-| API usage | [API Example](#-api-example) |
-| Project structure | [Architecture](#️-architecture) |
-
 ---
 
 ## Technology
