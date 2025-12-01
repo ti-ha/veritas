@@ -1,352 +1,181 @@
 """
-AI Text Generator for VERITAS Training Dataset
+Generate diverse AI samples using Claude API.
 
-Generates AI text samples using various free/public AI APIs for training data.
+This script uses the Anthropic Claude API to generate genuinely varied
+AI responses to prompts from the existing ai_samples.json file.
 
-Sources:
-- HuggingFace Inference API (free tier)
-- Various open models available via API
-- Different prompts and styles to create diversity
+Setup:
+    1. Install: pip install anthropic
+    2. Set environment variable: set ANTHROPIC_API_KEY=your_key_here
+    3. Run: python scripts/generate_diverse_ai_with_claude.py
 
-Usage:
-    python scripts/generate_ai_samples.py [--max-samples 500] [--output data/ai_samples.json]
-
-Note: You may need to set API keys as environment variables for some services.
+The API key is read from environment variable only - never stored in repo.
 """
 
 import json
+import os
 import time
-import argparse
-import requests
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict
-import random
-import os
+from anthropic import Anthropic
 
 
-class AITextGenerator:
-    """Generates diverse AI text samples for training."""
+def generate_with_claude(client, prompt: str, max_retries: int = 3) -> str:
+    """Generate AI response using Claude API."""
 
-    def __init__(self, output_file: str = "data/ai_samples.json", max_samples: int = 500):
-        self.output_file = Path(output_file)
-        self.max_samples = max_samples
-        self.samples = []
-        self.collected_ids = set()
+    system_prompt = """You are generating training data for an AI detection system.
+Write natural, varied responses to prompts. Use different styles, tones, and structures.
+Sometimes be concise, sometimes elaborate. Vary your approach - be conversational,
+academic, creative, technical, or casual as appropriate. Write like a helpful AI assistant
+would naturally respond."""
 
-        # Load existing samples
-        if self.output_file.exists():
-            with open(self.output_file, 'r', encoding='utf-8') as f:
-                existing = json.load(f)
-                self.samples = existing if isinstance(existing, list) else []
-                self.collected_ids = {s.get('id', '') for s in self.samples}
-                print(f"[LOAD] Loaded {len(self.samples)} existing samples")
-
-        # Diverse prompts for varied outputs
-        self.prompts = [
-            # Explanatory
-            "Explain how photosynthesis works in plants.",
-            "Describe the process of machine learning model training.",
-            "What are the main causes of climate change?",
-            "How does the internet work?",
-            "Explain quantum computing to a beginner.",
-
-            # Analytical
-            "Analyze the impact of social media on society.",
-            "Compare and contrast democracy and authoritarianism.",
-            "Discuss the pros and cons of remote work.",
-            "Evaluate the effectiveness of renewable energy sources.",
-            "Analyze the themes in Shakespeare's Hamlet.",
-
-            # Creative
-            "Write a short story about a time traveler.",
-            "Describe a futuristic city in the year 2100.",
-            "Create a character description for a fantasy novel.",
-            "Write a poem about autumn.",
-            "Imagine a conversation between Albert Einstein and Nikola Tesla.",
-
-            # Technical
-            "Explain the difference between SQL and NoSQL databases.",
-            "Describe how to implement a binary search algorithm.",
-            "What are the key principles of object-oriented programming?",
-            "Explain the concept of blockchain technology.",
-            "How do neural networks learn?",
-
-            # Opinion/Argumentative
-            "Should artificial intelligence be regulated? Discuss.",
-            "Is college education worth the cost?",
-            "Discuss the ethics of genetic engineering.",
-            "Should space exploration be a priority?",
-            "Is social media beneficial or harmful?",
-
-            # Instructional
-            "How to bake a chocolate cake from scratch.",
-            "Steps to learn a new programming language.",
-            "Guide to starting a small business.",
-            "How to improve your writing skills.",
-            "Tips for effective time management.",
-
-            # Descriptive
-            "Describe the Grand Canyon.",
-            "What is life like in Tokyo?",
-            "Describe the experience of skydiving.",
-            "What does it feel like to fall in love?",
-            "Describe a thunderstorm in detail.",
-
-            # Informative
-            "What is the history of the internet?",
-            "Explain the water cycle.",
-            "How do vaccines work?",
-            "What causes earthquakes?",
-            "The history of the Roman Empire.",
-        ]
-
-    def save_samples(self):
-        """Save samples to disk."""
-        self.output_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.output_file, 'w', encoding='utf-8') as f:
-            json.dump(self.samples, f, indent=2, ensure_ascii=False)
-        print(f"[SAVE] Saved {len(self.samples)} samples to {self.output_file}")
-
-    def add_sample(self, text: str, model: str, prompt: str):
-        """Add a generated sample."""
-        if len(text) < 100:  # Too short
-            return False
-
-        if len(text) > 10000:  # Truncate if too long
-            text = text[:10000]
-
-        sample_id = f"{model}_{hash(prompt)}_{hash(text[:100])}"
-
-        if sample_id in self.collected_ids:
-            return False
-
-        sample = {
-            'id': sample_id,
-            'text': text,
-            'label': 'ai',
-            'source': model,
-            'generated_at': datetime.now().isoformat(),
-            'word_count': len(text.split()),
-            'metadata': {
-                'model': model,
-                'prompt': prompt,
-                'type': 'ai_generated'
-            }
-        }
-
-        self.samples.append(sample)
-        self.collected_ids.add(sample_id)
-        return True
-
-    def generate_huggingface(self, model_name: str = "gpt2", prompt: str = None) -> str:
-        """
-        Generate text using HuggingFace Inference API.
-
-        Free tier available for many models. No API key needed for some public models.
-
-        Models to try:
-        - gpt2 (free, no auth)
-        - EleutherAI/gpt-neo-1.3B
-        - EleutherAI/gpt-j-6B
-        - bigscience/bloom-560m
-        """
+    for attempt in range(max_retries):
         try:
-            if prompt is None:
-                prompt = random.choice(self.prompts)
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=500,
+                temperature=0.8,  # Higher temperature for more variety
+                system=system_prompt,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
 
-            # HuggingFace Inference API
-            url = f"https://api-inference.huggingface.co/models/{model_name}"
-
-            # Check if HF_TOKEN is available (optional for many models)
-            headers = {}
-            hf_token = os.getenv('HF_TOKEN')
-            if hf_token:
-                headers['Authorization'] = f'Bearer {hf_token}'
-
-            payload = {
-                'inputs': prompt,
-                'parameters': {
-                    'max_length': 500,
-                    'temperature': 0.8,
-                    'top_p': 0.9,
-                    'do_sample': True
-                }
-            }
-
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-
-            if response.status_code == 200:
-                result = response.json()
-
-                if isinstance(result, list) and len(result) > 0:
-                    generated_text = result[0].get('generated_text', '')
-                    return generated_text
-                elif isinstance(result, dict):
-                    return result.get('generated_text', '')
-
-            elif response.status_code == 503:
-                # Model loading
-                print(f"  [!] Model {model_name} is loading, waiting...")
-                time.sleep(20)
-                return None
-
-            else:
-                print(f"  [!] HuggingFace API error {response.status_code}: {response.text[:200]}")
-                return None
+            return message.content[0].text
 
         except Exception as e:
-            print(f"  [!] Generation error: {e}")
-            return None
-
-        return None
-
-    def generate_local_simple(self, prompt: str = None) -> str:
-        """
-        Generate text using a simple Markov chain (offline backup).
-
-        This is a fallback for when APIs are unavailable. Not sophisticated,
-        but creates varied text patterns different from human writing.
-        """
-        if prompt is None:
-            prompt = random.choice(self.prompts)
-
-        # Simple template-based generation as fallback
-        templates = [
-            f"{prompt}\n\nThis is an important topic that requires careful consideration. "
-            "There are several key aspects to examine. First, we must understand the fundamentals. "
-            "The primary factors include various elements that interact in complex ways. "
-            "Research has shown that multiple approaches can be effective. "
-            "In conclusion, this subject demonstrates the complexity of modern challenges.",
-
-            f"When considering {prompt.lower()}, it's essential to examine multiple perspectives. "
-            "The conventional view suggests one approach, while alternative theories propose different solutions. "
-            "Historical context provides valuable insights into current understanding. "
-            "Contemporary research continues to refine our knowledge. "
-            "Ultimately, comprehensive analysis reveals nuanced conclusions.",
-
-            f"The question of {prompt.lower()} has fascinated researchers for decades. "
-            "Early studies established foundational principles that remain relevant today. "
-            "Modern advancements have expanded our capabilities significantly. "
-            "Current methodologies incorporate both traditional and innovative techniques. "
-            "Future developments promise even greater understanding and applications.",
-        ]
-
-        return random.choice(templates)
-
-    def run(self):
-        """Main generation loop."""
-        print("="*60)
-        print("VERITAS AI Text Generator")
-        print("="*60)
-        print(f"Target: {self.max_samples} samples")
-        print(f"Current: {len(self.samples)} samples")
-        print(f"Output: {self.output_file}")
-        print("\nGenerating using:")
-        print("  - HuggingFace models (gpt2, gpt-neo, etc.)")
-        print("  - Diverse prompts across domains")
-        print("\nNote: Set HF_TOKEN environment variable for better models")
-        print("Press Ctrl+C to stop gracefully")
-        print("="*60)
-
-        # Models to try (start with free ones)
-        models = [
-            "gpt2",  # Always free
-            "gpt2-medium",
-            "EleutherAI/gpt-neo-125M",
-            "distilgpt2",
-        ]
-
-        iteration = 0
-        consecutive_failures = 0
-
-        try:
-            while len(self.samples) < self.max_samples:
-                iteration += 1
-                print(f"\n[Iteration {iteration}] Samples: {len(self.samples)}/{self.max_samples}")
-
-                batch_collected = 0
-
-                # Try different models and prompts
-                for _ in range(5):  # 5 attempts per iteration
-                    model = random.choice(models)
-                    prompt = random.choice(self.prompts)
-
-                    print(f"\n[Generate] Model: {model}")
-                    print(f"           Prompt: {prompt[:60]}...")
-
-                    generated_text = self.generate_huggingface(model, prompt)
-
-                    if generated_text:
-                        if self.add_sample(generated_text, model, prompt):
-                            batch_collected += 1
-                            consecutive_failures = 0
-                            print(f"  [+] Generated sample ({len(generated_text)} chars)")
-                        else:
-                            print(f"  [-] Sample too short or duplicate")
-                    else:
-                        consecutive_failures += 1
-                        print(f"  [!] Generation failed")
-
-                    # If too many failures, use simple fallback
-                    if consecutive_failures >= 3:
-                        print(f"\n[FALLBACK] Using simple generation...")
-                        fallback_text = self.generate_local_simple(prompt)
-                        if self.add_sample(fallback_text, "simple_template", prompt):
-                            batch_collected += 1
-                            consecutive_failures = 0
-                            print(f"  [+] Fallback sample generated")
-
-                    # Sleep to respect API limits
-                    time.sleep(2)
-
-                # Save progress
-                if batch_collected > 0:
-                    self.save_samples()
-                    print(f"\n[PROGRESS] Total: {len(self.samples)}/{self.max_samples} ({batch_collected} this iteration)")
-
-                # Check if done
-                if len(self.samples) >= self.max_samples:
-                    print(f"\n[COMPLETE] Reached target of {self.max_samples} samples!")
-                    break
-
-                # Sleep between iterations
-                sleep_time = 5
-                print(f"\n[SLEEP] Waiting {sleep_time} seconds...")
-                time.sleep(sleep_time)
-
-        except KeyboardInterrupt:
-            print(f"\n\n[STOP] Interrupted by user")
-
-        finally:
-            self.save_samples()
-            print(f"\n[FINAL] Generated {len(self.samples)} total samples")
-            print(f"[FINAL] Saved to {self.output_file}")
-
-            # Statistics
-            models_used = {}
-            for sample in self.samples:
-                model = sample['metadata']['model']
-                models_used[model] = models_used.get(model, 0) + 1
-
-            print("\n[STATS] Samples by model:")
-            for model, count in sorted(models_used.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {model}: {count}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"  [!] Error: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"  [!] Failed after {max_retries} attempts: {e}")
+                return None
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate AI text samples for VERITAS training')
-    parser.add_argument('--max-samples', type=int, default=500, help='Maximum samples to generate')
-    parser.add_argument('--output', type=str, default='data/ai_samples.json', help='Output file')
+    print("="*60)
+    print("DIVERSE AI SAMPLE GENERATION WITH CLAUDE")
+    print("="*60)
 
-    args = parser.parse_args()
+    # Check for API key
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if not api_key:
+        print("\n[ERROR] ANTHROPIC_API_KEY environment variable not set!")
+        print("\nPlease set it with:")
+        print("  Windows: set ANTHROPIC_API_KEY=your_key_here")
+        print("  Linux/Mac: export ANTHROPIC_API_KEY=your_key_here")
+        print("\nOr set it permanently in your system environment variables.")
+        return
 
-    generator = AITextGenerator(
-        output_file=args.output,
-        max_samples=args.max_samples
-    )
+    print(f"[OK] API key found (length: {len(api_key)})")
 
-    generator.run()
+    # Initialize Claude client
+    client = Anthropic(api_key=api_key)
+
+    # Load existing samples to get prompts
+    input_file = Path("data/ai_samples.json")
+    if not input_file.exists():
+        print(f"\n[ERROR] {input_file} not found!")
+        return
+
+    with open(input_file, 'r', encoding='utf-8') as f:
+        existing_samples = json.load(f)
+
+    print(f"[LOAD] Found {len(existing_samples)} existing samples")
+
+    # Ask how many to generate
+    print(f"\nHow many diverse samples to generate?")
+    print(f"  Recommended: 500-1000 for good variety")
+    print(f"  Note: Claude API costs ~$0.003 per request")
+
+    try:
+        num_samples = int(input("Enter number (or press Enter for 500): ") or "500")
+    except ValueError:
+        num_samples = 500
+
+    print(f"\n[TARGET] Generating {num_samples} diverse samples")
+    print(f"[COST] Estimated cost: ${num_samples * 0.003:.2f}")
+
+    confirm = input("\nProceed? (y/n): ")
+    if confirm.lower() != 'y':
+        print("[CANCELLED]")
+        return
+
+    # Generate diverse samples
+    diverse_samples = []
+
+    # Use a variety of existing prompts
+    import random
+    selected_prompts = random.sample(existing_samples, min(num_samples, len(existing_samples)))
+
+    # Output file setup
+    output_file = Path("data/ai_samples_diverse_claude.json")
+
+    # Load existing diverse samples if resuming
+    if output_file.exists():
+        with open(output_file, 'r', encoding='utf-8') as f:
+            diverse_samples = json.load(f)
+        print(f"\n[RESUME] Found {len(diverse_samples)} existing diverse samples")
+        print(f"[RESUME] Will generate {num_samples - len(diverse_samples)} more\n")
+
+    print(f"\n[GENERATE] Starting generation...\n")
+
+    for i, sample in enumerate(selected_prompts):
+        # Skip if we already have enough samples
+        if len(diverse_samples) >= num_samples:
+            break
+
+        prompt = sample['metadata']['prompt']
+
+        print(f"[{len(diverse_samples)+1}/{num_samples}] {prompt[:60]}...")
+
+        # Generate response
+        response_text = generate_with_claude(client, prompt)
+
+        if response_text:
+            new_sample = {
+                'id': f"claude_diverse_{len(diverse_samples)}_{hash(prompt)}",
+                'text': response_text,
+                'label': 'ai',
+                'source': 'claude_sonnet_4',
+                'generated_at': datetime.now().isoformat(),
+                'word_count': len(response_text.split()),
+                'metadata': {
+                    'model': 'claude-sonnet-4-20250514',
+                    'prompt': prompt,
+                    'type': 'ai_generated'
+                }
+            }
+
+            diverse_samples.append(new_sample)
+            print(f"  [+] Generated ({len(response_text)} chars, {new_sample['word_count']} words)")
+
+            # Save after each successful generation (fault tolerance)
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(diverse_samples, f, indent=2, ensure_ascii=False)
+
+        else:
+            print(f"  [-] Failed to generate")
+
+        # Rate limiting - be respectful to API
+        if (len(diverse_samples)) % 10 == 0:
+            print(f"\n[PROGRESS] {len(diverse_samples)}/{num_samples} completed")
+            print(f"[SAVED] Progress saved to {output_file}")
+            print("[SLEEP] Pausing 2s for rate limiting...\n")
+            time.sleep(2)
+        else:
+            time.sleep(0.5)
+
+    print("\n" + "="*60)
+    print("GENERATION COMPLETE")
+    print("="*60)
+    print(f"[SAVE] Saved {len(diverse_samples)} samples to {output_file}")
+    print(f"\nNext steps:")
+    print(f"1. Review samples: open {output_file}")
+    print(f"2. Merge with existing: python scripts/merge_ai_samples.py")
+    print(f"3. Or replace existing: move {output_file} to data/ai_samples.json")
+    print("="*60)
 
 
 if __name__ == "__main__":

@@ -121,7 +121,8 @@ class VERITASClassifier:
         # Use ML classifier if available, otherwise fall back to heuristic scoring
         if self.ml_classifier is not None:
             # ML-based classification
-            ml_probability = self.ml_classifier.predict_proba([combined_features])[0][1]
+            # Training labels: 1='ai', 0='human' (see train_production_model.py line 68)
+            ml_probability = self.ml_classifier.predict_proba([combined_features])[0][1]  # Probability of class 1 ('ai')
             weighted_score = ml_probability
 
             # Still compute module scores for explanation (using heuristics)

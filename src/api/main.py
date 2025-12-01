@@ -91,6 +91,9 @@ async def detect_ai_text(request: DetectionRequest):
         return DetectionResponse(**result)
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] Analysis failed:\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
