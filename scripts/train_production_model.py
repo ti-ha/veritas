@@ -95,12 +95,19 @@ def extract_features(texts: list, name: str = "samples") -> np.ndarray:
             fractal_features = clf.fractal.extract_features(text)
             ergodic_features = clf.ergodic.extract_features(text)
 
-            # Concatenate all features (48 + 64 + 32 + 24 = 168)
+            # Compute module-level scores
+            kcda_score = clf._score_kcda(kcda_features)
+            tda_score = clf._score_tda(tda_features)
+            fractal_score = clf._score_fractal(fractal_features)
+            ergodic_score = clf._score_ergodic(ergodic_features)
+
+            # Combine raw features (168D) with module scores (4D) = 172D total
             features = np.concatenate([
                 kcda_features,
                 tda_features,
                 fractal_features,
-                ergodic_features
+                ergodic_features,
+                [kcda_score, tda_score, fractal_score, ergodic_score]
             ])
 
             features_list.append(features)
@@ -111,28 +118,28 @@ def extract_features(texts: list, name: str = "samples") -> np.ndarray:
         except Exception as e:
             print(f"  [ERROR] Sample {i}: {e}")
             # Use zero vector on error
-            features_list.append(np.zeros(168))
+            features_list.append(np.zeros(172))  # Updated size
 
     print(f"[OK] Feature extraction complete")
     return np.array(features_list)
 
 
 def perform_feature_selection(X_train: np.ndarray, y_train: np.ndarray,
-                              X_val: np.ndarray, n_features: int = 80) -> Tuple:
+                              X_val: np.ndarray, n_features: int = 84) -> Tuple:
     """
     Perform feature selection to reduce dimensionality.
 
     Args:
-        X_train: Training features (581, 168)
+        X_train: Training features (581, 172)
         y_train: Training labels
         X_val: Validation features
-        n_features: Number of top features to select (default: 80, down from 168)
+        n_features: Number of top features to select (default: 84, down from 172)
 
     Returns:
         (X_train_selected, X_val_selected, selector)
     """
     print("\n" + "="*60)
-    print(f"FEATURE SELECTION (168 -> {n_features} features)")
+    print(f"FEATURE SELECTION (172 -> {n_features} features)")
     print("="*60)
 
     # Method 1: F-statistic (ANOVA F-value)
@@ -154,7 +161,7 @@ def perform_feature_selection(X_train: np.ndarray, y_train: np.ndarray,
     feature_scores = selector.scores_
     selected_indices = selector.get_support(indices=True)
 
-    print(f"\n[OK] Selected top {n_features} features out of 168")
+    print(f"\n[OK] Selected top {n_features} features out of 172")
     print(f"[INFO] Feature score range: {feature_scores[selected_indices].min():.2f} - {feature_scores[selected_indices].max():.2f}")
     print(f"[INFO] Selected feature indices: {list(selected_indices[:10])}... (showing first 10)")
 
@@ -162,15 +169,214 @@ def perform_feature_selection(X_train: np.ndarray, y_train: np.ndarray,
     kcda_count = sum(1 for i in selected_indices if i < 48)
     tda_count = sum(1 for i in selected_indices if 48 <= i < 112)
     fractal_count = sum(1 for i in selected_indices if 112 <= i < 144)
-    ergodic_count = sum(1 for i in selected_indices if i >= 144)
+    ergodic_count = sum(1 for i in selected_indices if 144 <= i < 168)
+    meta_count = sum(1 for i in selected_indices if i >= 168)
 
     print(f"\n[DISTRIBUTION] Features per module:")
-    print(f"  KCDA:    {kcda_count}/{48} ({kcda_count/48*100:.1f}%)")
-    print(f"  TDA:     {tda_count}/{64} ({tda_count/64*100:.1f}%)")
-    print(f"  Fractal: {fractal_count}/{32} ({fractal_count/32*100:.1f}%)")
-    print(f"  Ergodic: {ergodic_count}/{24} ({ergodic_count/24*100:.1f}%)")
+    print(f"  KCDA:         {kcda_count}/{48} ({kcda_count/48*100:.1f}%)")
+    print(f"  TDA:          {tda_count}/{64} ({tda_count/64*100:.1f}%)")
+    print(f"  Fractal:      {fractal_count}/{32} ({fractal_count/32*100:.1f}%)")
+    print(f"  Ergodic:      {ergodic_count}/{24} ({ergodic_count/24*100:.1f}%)")
+    print(f"  Meta-scores:  {meta_count}/4 ({meta_count/4*100:.1f}%)")
 
     return X_train_selected, X_val_selected, selector
+
+
+def compute_agreement_weights(module_scores: np.ndarray, agreement_threshold: float = 0.6) -> np.ndarray:
+    """
+    Compute sample weights based on module agreement.
+
+    Samples where modules strongly agree get higher weight during training.
+    This helps model focus on clear signal and reduces impact of ambiguous samples.
+
+    Args:
+        module_scores: (N, 4) array of module scores for N samples
+        agreement_threshold: Minimum agreement to get full weight
+
+    Returns:
+        weights: (N,) array of sample weights in range [0.3, 1.0]
+    """
+    weights = []
+
+    for scores in module_scores:
+        # Compute agreement as 1 - (std of scores)
+        # High std = low agreement, low std = high agreement
+        std = np.std(scores)
+        agreement = 1.0 - min(std, 1.0)  # Clamp to [0, 1]
+
+        # Convert agreement to weight
+        # High agreement (>threshold) → weight = 1.0
+        # Low agreement → weight = 0.3 (still train, but with less emphasis)
+        if agreement >= agreement_threshold:
+            weight = 1.0
+        else:
+            # Linear interpolation: 0.0 agreement → 0.3 weight, threshold agreement → 1.0 weight
+            weight = 0.3 + (agreement / agreement_threshold) * 0.7
+
+        weights.append(weight)
+
+    return np.array(weights)
+
+
+def extract_features_with_agreement(texts: list, labels: list, name: str = "samples") -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extract features AND compute module scores + agreement weights.
+
+    Returns:
+        features: (N, 172) feature array
+        module_scores: (N, 4) module score array
+        sample_weights: (N,) agreement-based weights
+    """
+    print(f"\n[FEATURES] Extracting from {len(texts)} {name} with agreement weighting...")
+
+    clf = VERITASClassifier()
+    features_list = []
+    module_scores_list = []
+
+    for i, text in enumerate(texts):
+        try:
+            # Extract features from each analyzer
+            kcda_features = clf.kcda.extract_features(text)
+            tda_features = clf.tda.extract_features(text)
+            fractal_features = clf.fractal.extract_features(text)
+            ergodic_features = clf.ergodic.extract_features(text)
+
+            # Compute module-level scores
+            kcda_score = clf._score_kcda(kcda_features)
+            tda_score = clf._score_tda(tda_features)
+            fractal_score = clf._score_fractal(fractal_features)
+            ergodic_score = clf._score_ergodic(ergodic_features)
+
+            # Concatenate raw features + module scores
+            features = np.concatenate([
+                kcda_features,
+                tda_features,
+                fractal_features,
+                ergodic_features,
+                [kcda_score, tda_score, fractal_score, ergodic_score]
+            ])
+
+            features_list.append(features)
+            module_scores_list.append([kcda_score, tda_score, fractal_score, ergodic_score])
+
+            if (i + 1) % 100 == 0:
+                print(f"  Progress: {i + 1}/{len(texts)} ({(i+1)/len(texts)*100:.1f}%)")
+
+        except Exception as e:
+            print(f"  [ERROR] Sample {i}: {e}")
+            features_list.append(np.zeros(172))
+            module_scores_list.append([0.0, 0.0, 0.0, 0.0])
+
+    features_array = np.array(features_list)
+    module_scores_array = np.array(module_scores_list)
+
+    # Compute agreement-based weights
+    sample_weights = compute_agreement_weights(module_scores_array)
+
+    print(f"[OK] Feature extraction complete")
+    print(f"[WEIGHTS] Sample weight range: {sample_weights.min():.2f} - {sample_weights.max():.2f}")
+    print(f"[WEIGHTS] High agreement samples (weight=1.0): {np.sum(sample_weights == 1.0)}/{len(sample_weights)} ({np.sum(sample_weights == 1.0)/len(sample_weights)*100:.1f}%)")
+
+    return features_array, module_scores_array, sample_weights
+
+
+def train_stacking_ensemble(X_train: np.ndarray, y_train: np.ndarray,
+                            X_val: np.ndarray, y_val: np.ndarray,
+                            module_scores_train: np.ndarray,
+                            module_scores_val: np.ndarray,
+                            sample_weights: np.ndarray = None) -> Dict:
+    """
+    Train a 2-level stacking ensemble.
+
+    Level 1: Base model predicts from 84 selected features → probability
+    Level 2: Meta-learner combines [probability, 4 module scores] → final prediction
+
+    Args:
+        X_train: (N, 84) selected features for training
+        y_train: (N,) labels
+        X_val: (M, 84) selected features for validation
+        y_val: (M,) labels
+        module_scores_train: (N, 4) module scores for training
+        module_scores_val: (M, 4) module scores for validation
+        sample_weights: (N,) agreement-based weights (optional)
+
+    Returns:
+        Dictionary with base_model, meta_model, and performance metrics
+    """
+    print("\n" + "="*60)
+    print("STACKING ENSEMBLE (2-Level Architecture)")
+    print("="*60)
+
+    # Train base model on selected features
+    print("\n[LEVEL 1] Training base model on selected features...")
+    base_model = GradientBoostingClassifier(
+        n_estimators=200,
+        max_depth=3,
+        learning_rate=0.05,
+        min_samples_split=20,
+        subsample=0.9,
+        random_state=42
+    )
+
+    if sample_weights is not None:
+        base_model.fit(X_train, y_train, sample_weight=sample_weights)
+        print(f"  [OK] Trained with agreement-based sample weighting")
+    else:
+        base_model.fit(X_train, y_train)
+
+    train_proba = base_model.predict_proba(X_train)[:, 1]
+    val_proba = base_model.predict_proba(X_val)[:, 1]
+
+    train_acc = base_model.score(X_train, y_train)
+    val_acc = base_model.score(X_val, y_val)
+    print(f"  Base model - Train: {train_acc:.2%}, Val: {val_acc:.2%}")
+
+    # Train meta-learner combining base probability with module scores
+    print("\n[LEVEL 2] Training meta-learner on base probability and module scores...")
+    X_meta_train = np.column_stack([
+        train_proba.reshape(-1, 1),
+        module_scores_train
+    ])  # Shape: (N, 5)
+
+    X_meta_val = np.column_stack([
+        val_proba.reshape(-1, 1),
+        module_scores_val
+    ])  # Shape: (M, 5)
+
+    # Meta-learner: Simple logistic regression (prevents overfitting on 5 features)
+    meta_model = LogisticRegression(
+        C=1.0,  # Moderate regularization
+        max_iter=1000,
+        random_state=42
+    )
+
+    if sample_weights is not None:
+        meta_model.fit(X_meta_train, y_train, sample_weight=sample_weights)
+    else:
+        meta_model.fit(X_meta_train, y_train)
+
+    # Evaluate stacking ensemble
+    train_acc_stack = meta_model.score(X_meta_train, y_train)
+    val_acc_stack = meta_model.score(X_meta_val, y_val)
+
+    print(f"  Meta-learner - Train: {train_acc_stack:.2%}, Val: {val_acc_stack:.2%}")
+    print(f"  Improvement: Train {train_acc_stack - train_acc:+.2%}, Val {val_acc_stack - val_acc:+.2%}")
+
+    # Show meta-learner feature importance (coefficients)
+    coeffs = meta_model.coef_[0]
+    feature_names = ['ML_Probability', 'KCDA', 'TDA', 'Fractal', 'Ergodic']
+    print(f"\n[META-WEIGHTS] Feature importance:")
+    for name, coef in zip(feature_names, coeffs):
+        print(f"  {name:15s}: {coef:+.3f}")
+
+    return {
+        'base_model': base_model,
+        'meta_model': meta_model,
+        'train_acc_base': train_acc,
+        'val_acc_base': val_acc,
+        'train_acc_stack': train_acc_stack,
+        'val_acc_stack': val_acc_stack
+    }
 
 
 def train_baseline_models(X_train: np.ndarray, y_train: np.ndarray,
@@ -404,25 +610,45 @@ def main():
         print("Please run: python scripts/prepare_training_data.py")
         return
 
-    # 2. Extract features
-    print("\n[STEP 2] Extracting features...")
-    X_train = extract_features(train_texts, "training samples")
-    X_val = extract_features(val_texts, "validation samples") if len(val_texts) > 0 else np.array([])
-    X_test = extract_features(test_texts, "test samples") if len(test_texts) > 0 else np.array([])
+    # 2. Extract features WITH module scores and agreement weights
+    print("\n[STEP 2] Extracting features with module scores...")
+    X_train, module_scores_train, weights_train = extract_features_with_agreement(
+        train_texts, train_labels, "training samples"
+    )
+
+    if len(val_texts) > 0:
+        X_val, module_scores_val, weights_val = extract_features_with_agreement(
+            val_texts, val_labels, "validation samples"
+        )
+    else:
+        X_val, module_scores_val, weights_val = np.array([]), np.array([]), np.array([])
+
+    if len(test_texts) > 0:
+        X_test, module_scores_test, weights_test = extract_features_with_agreement(
+            test_texts, test_labels, "test samples"
+        )
+    else:
+        X_test, module_scores_test, weights_test = np.array([]), np.array([]), np.array([])
 
     y_train = np.array(train_labels)
     y_val = np.array(val_labels) if len(val_labels) > 0 else np.array([])
     y_test = np.array(test_labels) if len(test_labels) > 0 else np.array([])
 
-    # Save features
+    # Save features, module scores, and weights
     np.save("data/X_train.npy", X_train)
     np.save("data/y_train.npy", y_train)
+    np.save("data/module_scores_train.npy", module_scores_train)
+    np.save("data/weights_train.npy", weights_train)
     if len(X_val) > 0:
         np.save("data/X_val.npy", X_val)
         np.save("data/y_val.npy", y_val)
+        np.save("data/module_scores_val.npy", module_scores_val)
+        np.save("data/weights_val.npy", weights_val)
     if len(X_test) > 0:
         np.save("data/X_test.npy", X_test)
         np.save("data/y_test.npy", y_test)
+        np.save("data/module_scores_test.npy", module_scores_test)
+        np.save("data/weights_test.npy", weights_test)
 
     print(f"\n[OK] Features saved to data/ directory")
     print(f"  Training: {X_train.shape}")
@@ -431,10 +657,10 @@ def main():
     if len(X_test) > 0:
         print(f"  Test: {X_test.shape}")
 
-    # 2.5. Feature Selection (reduce from 168 to 80 features)
+    # 2.5. Feature Selection (reduce from 172 to 84 features)
     print("\n[STEP 2.5] Performing feature selection...")
     X_train_selected, X_val_selected, feature_selector = perform_feature_selection(
-        X_train, y_train, X_val, n_features=80
+        X_train, y_train, X_val, n_features=84
     )
 
     # Also transform test set
@@ -462,6 +688,32 @@ def main():
 
         # Combine all results
         all_results = {**baseline_results, **optimized_results}
+
+    # 5. Train stacking ensemble with agreement weighting
+    if len(X_val) > 0:
+        print("\n[STEP 5] Training stacking ensemble with agreement weighting...")
+
+        # Get module scores for selected features
+        module_scores_train_selected = module_scores_train
+        module_scores_val_selected = module_scores_val
+
+        stacking_results = train_stacking_ensemble(
+            X_train_for_training, y_train,
+            X_val_for_training, y_val,
+            module_scores_train_selected,
+            module_scores_val_selected,
+            sample_weights=weights_train
+        )
+
+        # Save stacking models
+        joblib.dump(stacking_results['base_model'], "models/GradientBoosting_stacking_base.pkl")
+        joblib.dump(stacking_results['meta_model'], "models/LogisticRegression_stacking_meta.pkl")
+        print(f"\n[SAVE] Stacking models saved:")
+        print(f"  Base:  models/GradientBoosting_stacking_base.pkl")
+        print(f"  Meta:  models/LogisticRegression_stacking_meta.pkl")
+
+        # Add to results
+        all_results['Stacking_Ensemble'] = stacking_results
 
         # 5. Select best model
         print("\n[STEP 5] Selecting best model...")

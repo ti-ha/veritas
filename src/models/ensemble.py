@@ -33,15 +33,31 @@ class VERITASClassifier:
         self.fractal = FractalAnalyzer(random_seed=random_seed)
         self.ergodic = ErgodicAnalyzer(random_seed=random_seed)
 
-        # Load ML classifier if available
-        self.ml_classifier = None
+        # Load ML classifier (stacking ensemble if available, otherwise single model)
+        self.ml_base_model = None
+        self.ml_meta_model = None
+        self.feature_selector = None
         try:
             import joblib
             from pathlib import Path
-            model_path = Path(__file__).parent.parent.parent / "models" / "GradientBoosting_classifier.pkl"
-            if model_path.exists():
-                self.ml_classifier = joblib.load(model_path)
-                print(f"[ML] Loaded trained classifier from {model_path}")
+            models_dir = Path(__file__).parent.parent.parent / "models"
+
+            # Attempt to load stacking ensemble models
+            base_path = models_dir / "GradientBoosting_stacking_base.pkl"
+            meta_path = models_dir / "LogisticRegression_stacking_meta.pkl"
+            selector_path = models_dir / "feature_selector.pkl"
+
+            if base_path.exists() and meta_path.exists() and selector_path.exists():
+                self.ml_base_model = joblib.load(base_path)
+                self.ml_meta_model = joblib.load(meta_path)
+                self.feature_selector = joblib.load(selector_path)
+                print(f"[ML] Loaded stacking ensemble: base + meta models with feature selector")
+            else:
+                # Load single model if stacking ensemble unavailable
+                single_model_path = models_dir / "GradientBoosting_classifier.pkl"
+                if single_model_path.exists():
+                    self.ml_base_model = joblib.load(single_model_path)
+                    print(f"[ML] Loaded single classifier from {single_model_path}")
         except Exception as e:
             print(f"[ML] No trained classifier found, using heuristic scoring: {e}")
 
@@ -110,54 +126,50 @@ class VERITASClassifier:
                 'features': {}
             }
 
-        # Combine all features (168 dimensions total)
-        combined_features = np.concatenate([
-            kcda_features,
-            tda_features,
-            fractal_features,
-            ergodic_features
-        ])
+        # Compute module-level scores
+        kcda_score = self._score_kcda(kcda_features)
+        tda_score = self._score_tda(tda_features)
+        fractal_score = self._score_fractal(fractal_features)
+        ergodic_score = self._score_ergodic(ergodic_features)
 
-        # Use ML classifier if available, otherwise fall back to heuristic scoring
-        if self.ml_classifier is not None:
-            # ML-based classification
-            # Training labels: 1='ai', 0='human' (see train_production_model.py line 68)
-            ml_probability = self.ml_classifier.predict_proba([combined_features])[0][1]  # Probability of class 1 ('ai')
-            weighted_score = ml_probability
+        module_scores = {
+            'kcda': kcda_score,
+            'tda': tda_score,
+            'fractal': fractal_score,
+            'ergodic': ergodic_score
+        }
 
-            # Still compute module scores for explanation (using heuristics)
-            kcda_score = self._score_kcda(kcda_features)
-            tda_score = self._score_tda(tda_features)
-            fractal_score = self._score_fractal(fractal_features)
-            ergodic_score = self._score_ergodic(ergodic_features)
+        # Compute agreement based on module scores
+        scores_array = np.array(list(module_scores.values()))
+        agreement = self._compute_agreement(scores_array)
+        outliers = self._detect_outliers(module_scores)
 
-            module_scores = {
-                'kcda': kcda_score,
-                'tda': tda_score,
-                'fractal': fractal_score,
-                'ergodic': ergodic_score
-            }
+        if self.ml_base_model is not None:
+            # Combine raw features (168D) with module scores (4D) = 172D total
+            combined_features = np.concatenate([
+                kcda_features,
+                tda_features,
+                fractal_features,
+                ergodic_features,
+                [kcda_score, tda_score, fractal_score, ergodic_score]
+            ])
 
-            # Compute agreement based on module scores
-            scores_array = np.array(list(module_scores.values()))
-            agreement = self._compute_agreement(scores_array)
-            outliers = self._detect_outliers(module_scores)
+            if self.ml_meta_model is not None and self.feature_selector is not None:
+                # Apply stacking ensemble with feature selection
+                combined_features_selected = self.feature_selector.transform([combined_features])
+                base_probability = self.ml_base_model.predict_proba(combined_features_selected)[0][1]
+
+                # Meta-model combines base probability with module scores
+                meta_features = np.array([[base_probability, kcda_score, tda_score, fractal_score, ergodic_score]])
+                ml_probability = self.ml_meta_model.predict_proba(meta_features)[0][1]
+                weighted_score = ml_probability
+            else:
+                # Use single model on raw features only
+                ml_probability = self.ml_base_model.predict_proba([combined_features[:168]])[0][1]
+                weighted_score = ml_probability
 
         else:
-            # Heuristic-based classification (original approach)
-            kcda_score = self._score_kcda(kcda_features)
-            tda_score = self._score_tda(tda_features)
-            fractal_score = self._score_fractal(fractal_features)
-            ergodic_score = self._score_ergodic(ergodic_features)
-
-            module_scores = {
-                'kcda': kcda_score,
-                'tda': tda_score,
-                'fractal': fractal_score,
-                'ergodic': ergodic_score
-            }
-
-            # Improved ensemble decision with weighted voting
+            # Use weighted ensemble of heuristic module scores
             weighted_score, agreement, outliers = self._compute_weighted_ensemble(module_scores)
 
         # Determine classification level based on weighted score and agreement
